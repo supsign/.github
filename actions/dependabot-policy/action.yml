@@ -1,0 +1,82 @@
+name: Dependabot-Policy
+description: Entscheidet, ob ein Dependabot-PR automatisch gemergt werden darf (Metadaten und Lock-Diff, siehe policy.mjs).
+
+inputs:
+  updated-dependencies-json:
+    description: Output updated-dependencies-json von dependabot/fetch-metadata
+    required: true
+  directory:
+    description: Output directory von dependabot/fetch-metadata, z.B. "/" oder "/Develop/paket"
+    required: true
+  max-update:
+    description: Hoechster Update-Typ, der automatisch gemergt wird (patch oder minor)
+    required: true
+  merge-sha:
+    description: Test-Merge-Commit des PRs (github.sha bei pull_request), also genau der Stand, den die CI geprueft hat
+    required: true
+
+outputs:
+  auto-merge:
+    description: "'true', wenn der PR automatisch gemergt werden darf"
+    value: ${{ steps.policy.outputs.auto-merge }}
+  reason:
+    description: Begruendung in einer Zeile
+    value: ${{ steps.policy.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    # Verglichen wird der Test-Merge-Commit mit seinem ersten Parent, dem Stand
+    # des Base-Branches. Das ist genau das, was der Merge in main aendert.
+    # base.sha gegen head.sha waere falsch, sobald der PR-Branch hinter main
+    # liegt: dann erscheinen neuere Aenderungen auf main rueckwaerts als
+    # Downgrades, z.B. guzzle 7.16.0 -> 7.15.5 in einem npm-PR.
+    #
+    # Die Lockfiles kommen als reine Daten ueber die Contents-API, aus dem PR
+    # wird nichts ausgecheckt oder ausgefuehrt. Die Raw-Variante liefert auch
+    # Dateien ueber 1 MB. 404 heisst "gibt es nicht", alles andere ist ein
+    # Fehler und bricht ab, statt still ohne Lock-Diff zu entscheiden.
+    - name: Lockfiles von Base und Test-Merge holen
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        DIRECTORY: ${{ inputs.directory }}
+        MERGE_SHA: ${{ inputs.merge-sha }}
+      run: |
+        verzeichnis="${DIRECTORY#/}"
+        verzeichnis="${verzeichnis%/}"
+        praefix="${verzeichnis:+$verzeichnis/}"
+        base_sha=$(gh api "repos/$REPO/commits/$MERGE_SHA" --jq '.parents[0].sha')
+
+        for seite in base head; do
+          sha=$([ "$seite" = base ] && echo "$base_sha" || echo "$MERGE_SHA")
+          ziel="$RUNNER_TEMP/lock-$seite"
+          mkdir -p "$ziel"
+
+          for datei in composer.lock package-lock.json; do
+            code=$(curl -sS -o "$ziel/$datei" -w '%{http_code}' \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github.raw+json' \
+              "$GITHUB_API_URL/repos/$REPO/contents/$praefix$datei?ref=$sha")
+
+            case "$code" in
+              200) echo "$seite: $praefix$datei" ;;
+              404) rm -f "$ziel/$datei" ;;
+              *)
+                echo "::error::$praefix$datei@$sha: HTTP $code"
+                exit 1
+                ;;
+            esac
+          done
+        done
+
+    - name: Policy auswerten
+      id: policy
+      shell: bash
+      env:
+        UPDATED_DEPENDENCIES_JSON: ${{ inputs.updated-dependencies-json }}
+        MAX_UPDATE: ${{ inputs.max-update }}
+        LOCKFILE_BASE_DIR: ${{ runner.temp }}/lock-base
+        LOCKFILE_HEAD_DIR: ${{ runner.temp }}/lock-head
+      run: node "$GITHUB_ACTION_PATH/policy.mjs"

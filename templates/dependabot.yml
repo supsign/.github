@@ -1,0 +1,109 @@
+# Dependabot-Standard fuer supsign-Repos.
+# Vorlage: https://github.com/supsign/.github/blob/main/templates/dependabot.yml
+#
+# Uebernehmen, nicht benoetigte Oekosysteme loeschen. Repo-spezifisch sind nur:
+#   - registries: private Pakete (@supsign/* auf GitHub Packages, Spatie Satis)
+#   - ignore: Pakete, die nachweislich nicht gehoben werden koennen, jeweils mit
+#     Grund im Kommentar
+# Alles andere bleibt wie hier, damit die zentrale Policy ueberall gleich greift.
+#
+# Warum die Gruppen so geschnitten sind:
+#   - patch und minor getrennt: ein Minor, das die CI bricht, haelt die Patches
+#     nicht auf. Ausserdem meldet fetch-metadata pro PR nur das hoechste Update.
+#   - Security nur patch und minor: ein Security-Major kommt als eigener PR und
+#     blockiert keine harmlosen Security-Patches.
+#   - Majors ungruppiert: jeder braucht ein eigenes Review.
+version: 2
+
+# Nur behalten, was das Repo braucht. Die Secrets liegen unter
+# Settings -> Secrets and variables -> Dependabot (nicht Actions).
+registries:
+  github-npm:
+    type: npm-registry
+    url: https://npm.pkg.github.com
+    token: ${{secrets.PACKAGES_READ_TOKEN}}
+
+updates:
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 5
+    # Neue Releases erst nach ein paar Tagen aufgreifen: zurueckgezogene oder
+    # sofort nachgepatchte Versionen erzeugen dann gar keinen PR.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    commit-message:
+      # include: scope ergaenzt (deps) bzw. (deps-dev) selbst.
+      prefix: build
+      prefix-development: build
+      include: scope
+    groups:
+      composer-patch:
+        applies-to: version-updates
+        patterns: ['*']
+        update-types: [patch]
+      composer-minor:
+        applies-to: version-updates
+        patterns: ['*']
+        update-types: [minor]
+      composer-security:
+        applies-to: security-updates
+        patterns: ['*']
+        update-types: [patch, minor]
+
+  - package-ecosystem: npm
+    directory: /
+    registries:
+      - github-npm
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    commit-message:
+      prefix: build
+      prefix-development: build
+      include: scope
+    groups:
+      npm-patch:
+        applies-to: version-updates
+        patterns: ['*']
+        update-types: [patch]
+      npm-minor:
+        applies-to: version-updates
+        patterns: ['*']
+        update-types: [minor]
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
+        update-types: [patch, minor]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 3
+    # github-actions kennt nur default-days, die semver-*-Keys lehnt
+    # Dependabot ab und verwirft dann die ganze Datei.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      actions-patch:
+        patterns: ['*']
+        update-types: [patch]
+      actions-minor:
+        patterns: ['*']
+        update-types: [minor]

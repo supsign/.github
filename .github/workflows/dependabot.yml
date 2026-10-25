@@ -1,0 +1,145 @@
+name: Dependabot
+
+# Zentrale Dependabot-Automatik fuer alle supsign-Repos, Regeln und Einbindung
+# siehe README.md. Aufgerufen als letzter Job der CI eines Repos:
+#
+#   dependabot:
+#     needs: ci
+#     uses: supsign/.github/.github/workflows/dependabot.yml@main
+#     permissions:
+#       contents: write
+#       pull-requests: write
+#
+# `needs: ci` ist das Gate: dieser Workflow startet erst, wenn die CI des
+# Repos gruen ist. Deshalb gibt es hier weder Warteschleifen noch
+# `gh pr merge --auto`, und es funktioniert auch in Repos ohne Branch-Schutz.
+
+on:
+  workflow_call:
+    inputs:
+      max-update:
+        description: Hoechster Update-Typ, der automatisch gemergt wird (patch oder minor)
+        type: string
+        default: minor
+      merge-method:
+        description: merge, squash oder rebase, muss in den Repo-Einstellungen erlaubt sein
+        type: string
+        default: squash
+
+jobs:
+  dependabot:
+    name: Dependabot
+    # Auch der Ausloeser muss Dependabot sein: pusht ein Mensch zusaetzlich auf
+    # den Branch, landet sein Code nicht ohne Review in main.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      LABEL: needs-manual-review
+      # Erkennungszeichen des einen Kommentars, den dieser Workflow pflegt.
+      MARKER: '<!-- supsign-dependabot -->'
+
+    steps:
+      - name: Dependabot-Metadaten holen
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Policy auswerten
+        id: policy
+        uses: supsign/.github/actions/dependabot-policy@main
+        with:
+          updated-dependencies-json: ${{ steps.metadata.outputs.updated-dependencies-json }}
+          directory: ${{ steps.metadata.outputs.directory }}
+          max-update: ${{ inputs.max-update }}
+          merge-sha: ${{ github.sha }}
+
+      # Bewusst die REST-Merge-API und nicht `gh pr merge`: das CLI verweigert
+      # bei mergeStateStatus BLOCKED schon clientseitig, auch wenn der
+      # Branch-Schutz github-actions per Bypass von der Review-Pflicht ausnimmt.
+      # `sha` stellt sicher, dass genau der Commit gemergt wird, den die CI
+      # geprueft hat. Kam inzwischen ein neuer Commit, uebernimmt dessen Lauf.
+      - name: Mergen
+        if: steps.policy.outputs.auto-merge == 'true'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_METHOD: ${{ inputs.merge-method }}
+        run: |
+          case "$MERGE_METHOD" in
+            merge|squash|rebase) ;;
+            *) echo "::error::merge-method muss merge, squash oder rebase sein, ist '$MERGE_METHOD'"; exit 1 ;;
+          esac
+
+          if gh pr view "$PR_URL" --json labels --jq '.labels[].name' | grep -qx "$LABEL"; then
+            gh pr edit "$PR_URL" --remove-label "$LABEL"
+          fi
+
+          for versuch in 1 2 3; do
+            if antwort=$(gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/merge" -f merge_method="$MERGE_METHOD" -f sha="$HEAD_SHA" 2>&1); then
+              echo "Gemergt: $PR_URL"
+              exit 0
+            fi
+
+            echo "::warning::Merge-Versuch $versuch: $antwort"
+
+            case "$antwort" in
+              *"Head branch was modified"*)
+                echo "Neuer Commit auf dem PR, dessen eigener CI-Lauf uebernimmt."
+                exit 0
+                ;;
+            esac
+
+            zustand=$(gh pr view "$PR_URL" --json mergeStateStatus --jq .mergeStateStatus)
+
+            case "$zustand" in
+              BEHIND)
+                gh pr comment "$PR_URL" --body '@dependabot rebase'
+                echo "Branch hinter dem Base-Branch, Rebase angefordert. Der naechste Lauf merged."
+                exit 0
+                ;;
+              DIRTY)
+                echo "Merge-Konflikt, Dependabot rebased von selbst."
+                exit 0
+                ;;
+            esac
+
+            # "Base branch was modified": ein anderer PR wurde gerade gemergt.
+            sleep 20
+          done
+
+          echo "::error::Merge nach 3 Versuchen fehlgeschlagen. Verlangt der Branch-Schutz Reviews, fehlt vermutlich der Bypass fuer github-actions (README, Abschnitt Branch-Schutz)."
+          exit 1
+
+      - name: Fuer manuelles Review markieren
+        if: steps.policy.outputs.auto-merge != 'true'
+        env:
+          REASON: ${{ steps.policy.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create "$LABEL" --color D93F0B --description 'Dependabot: kein Auto-Merge, siehe Kommentar im PR' --force >/dev/null
+          gh pr edit "$PR_URL" --add-label "$LABEL"
+
+          body=$(printf '%s\n' \
+            "$MARKER" \
+            '**Kein Auto-Merge.** Die CI ist gruen, aber die zentrale Dependabot-Policy laesst diesen PR nicht automatisch durch:' \
+            '' \
+            "> $REASON" \
+            '' \
+            "Lock-Diff und Details: [Job-Zusammenfassung]($RUN_URL). Regeln: [supsign/.github](https://github.com/supsign/.github#dependabot)")
+
+          # Ein Kommentar pro PR, bei jedem Rebase aktualisiert statt neu.
+          kommentar=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | head -1)
+
+          if [ -n "$kommentar" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$kommentar" -f body="$body" >/dev/null
+          else
+            gh pr comment "$PR_URL" --body "$body"
+          fi

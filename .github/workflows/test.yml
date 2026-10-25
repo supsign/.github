@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Policy-Tests und Workflow-Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Policy-Tests
+        run: node --test "actions/**/*.test.mjs"
+
+      - name: Workflows pruefen (actionlint)
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
