@@ -2,7 +2,9 @@
 # Vorlage: https://github.com/supsign/.github/blob/main/templates/dependabot.yml
 #
 # Uebernehmen, nicht benoetigte Oekosysteme loeschen. Repo-spezifisch sind nur:
-#   - registries: private Pakete (@supsign/* auf GitHub Packages, Spatie Satis)
+#   - registries: private Pakete (@supsign/* auf GitHub Packages, Spatie Satis),
+#     nur mit vorhandenem Dependabot-Secret
+#   - weitere Oekosysteme (z.B. pip), nach demselben Muster
 #   - ignore: Pakete, die nachweislich nicht gehoben werden koennen, jeweils mit
 #     Grund im Kommentar
 # Alles andere bleibt wie hier, damit die zentrale Policy ueberall gleich greift.
@@ -15,13 +17,16 @@
 #   - Majors ungruppiert: jeder braucht ein eigenes Review.
 version: 2
 
-# Nur behalten, was das Repo braucht. Die Secrets liegen unter
-# Settings -> Secrets and variables -> Dependabot (nicht Actions).
-registries:
-  github-npm:
-    type: npm-registry
-    url: https://npm.pkg.github.com
-    token: ${{secrets.PACKAGES_READ_TOKEN}}
+# Private Registries nur einkommentieren, wenn das Repo sie braucht, und nur
+# wenn das Secret existiert (Settings -> Secrets and variables -> Dependabot,
+# nicht Actions). Fehlt es, scheitert JEDER Dependabot-Lauf des Oekosystems
+# mit "Secret Not Found", auch Rebases.
+#
+# registries:
+#   github-npm:
+#     type: npm-registry
+#     url: https://npm.pkg.github.com
+#     token: ${{secrets.PACKAGES_READ_TOKEN}}
 
 updates:
   - package-ecosystem: composer
@@ -58,8 +63,8 @@ updates:
 
   - package-ecosystem: npm
     directory: /
-    registries:
-      - github-npm
+    # registries:
+    #   - github-npm
     schedule:
       interval: weekly
       day: monday
