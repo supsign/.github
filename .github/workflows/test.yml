@@ -9,8 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Policy-Tests und Workflow-Lint
+  # Heisst wie ueberall `ci`, damit der Branch-Schutz-Standard auch hier gilt.
+  ci:
+    name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
