@@ -47,7 +47,11 @@ Der Job läuft nur, wenn der PR von Dependabot stammt **und** Dependabot den Lau
 
 ### Einbinden in ein Repo
 
-1. **`.github/dependabot.yml`** aus [`templates/dependabot.yml`](templates/dependabot.yml) übernehmen. Repo-spezifisch bleiben nur `registries` und `ignore`, jeweils mit Grund.
+1. **`.github/dependabot.yml`** aus [`templates/dependabot.yml`](templates/dependabot.yml) übernehmen. Repo-spezifisch bleibt nur Folgendes, jeweils mit Grund im Kommentar:
+   - `registries`, und nur, wenn das Dependabot-Secret existiert
+   - `ignore` für Pakete, die nachweislich nicht gehoben werden können
+   - Familien-Gruppen für Pakete, die nur gemeinsam gehoben werden können, sonst bricht die Installation (z.B. `nx` mit `@nx/*` und `@swc/*`). Sie stehen **vor** den Standard-Gruppen, weil Dependabot ein Paket der ersten passenden Gruppe zuordnet.
+   - weitere Ökosysteme (z.B. `pip`) nach demselben Muster
 2. **CI**: Am Ende der CI-Datei kommen die beiden Jobs `ci` und `dependabot` aus [`templates/ci.yml`](templates/ci.yml) dazu. `ci` braucht in `needs` alle anderen Jobs der Datei.
 3. **Eigene Auto-Merge-Workflows löschen** (`dependabot-auto-merge.yml` und ähnliche).
 4. **Branch-Schutz** setzen: `node scripts/branch-protection.mjs supsign/<repo>`, prüfen, dann mit `--apply`.
