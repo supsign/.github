@@ -15,6 +15,9 @@ import {
 } from './policy.mjs';
 
 const NO_LOCK = { changes: [], errors: [], files: [] };
+const NPM = { ecosystem: 'npm_and_yarn', maxUpdate: 'minor' };
+const NPM_PATCH = { ecosystem: 'npm_and_yarn', maxUpdate: 'patch' };
+const ACTIONS = { ecosystem: 'github_actions', maxUpdate: 'patch' };
 
 function dependency(name, updateType, from = '1.0.0', to = '1.0.1') {
   return { dependencyName: name, updateType: `version-update:semver-${updateType}`, prevVersion: from, newVersion: to };
@@ -49,31 +52,42 @@ function lockDirs(base, head) {
 
 describe('Metadaten', () => {
   it('merged patch und minor automatisch', () => {
-    const result = evaluatePolicy(deps(dependency('laravel/framework', 'minor'), dependency('axios', 'patch')), NO_LOCK, 'minor');
+    const result = evaluatePolicy(deps(dependency('laravel/framework', 'minor'), dependency('axios', 'patch')), NO_LOCK, NPM);
 
     assert.equal(result.autoMerge, true);
     assert.match(result.reason, /laravel\/framework \(minor\), axios \(patch\)/);
   });
 
   it('haelt minor zurueck, wenn das Repo nur patch erlaubt', () => {
-    const result = evaluatePolicy(deps(dependency('axios', 'minor')), NO_LOCK, 'patch');
+    const result = evaluatePolicy(deps(dependency('axios', 'minor')), NO_LOCK, NPM_PATCH);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /axios: minor, dieses Repo merged nur patch/);
   });
 
   it('haelt Majors zurueck, auch wenn nur ein Paket der Gruppe betroffen ist', () => {
-    const result = evaluatePolicy(deps(dependency('vite', 'patch'), dependency('@inertiajs/vue3', 'major', '2.3.21', '3.7.1')), NO_LOCK, 'minor');
+    const result = evaluatePolicy(deps(dependency('vite', 'patch'), dependency('@inertiajs/vue3', 'major', '2.3.21', '3.7.1')), NO_LOCK, NPM);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /@inertiajs\/vue3: Major/);
   });
 
-  it('haelt einen unbekannten Update-Typ zurueck', () => {
-    const result = evaluatePolicy(parseDependencies(JSON.stringify([{ dependencyName: 'actions/checkout', updateType: '' }])), NO_LOCK, 'minor');
+  it('merged GitHub-Actions-Updates jeder Stufe, auch in einem Repo mit max-update patch', () => {
+    const result = evaluatePolicy(deps(dependency('actions/checkout', 'major', '6', '7'), dependency('shivammathur/setup-php', 'minor')), NO_LOCK, ACTIONS);
+
+    assert.equal(result.autoMerge, true);
+    assert.match(result.reason, /actions\/checkout \(major\), shivammathur\/setup-php \(minor\)/);
+  });
+
+  it('haelt einen unbekannten Update-Typ zurueck, auch bei GitHub Actions', () => {
+    const result = evaluatePolicy(parseDependencies(JSON.stringify([{ dependencyName: 'actions/checkout', updateType: '' }])), NO_LOCK, ACTIONS);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /actions\/checkout: Update-Typ unbekannt/);
+  });
+
+  it('wendet die Actions-Ausnahme nicht auf Pakete an', () => {
+    assert.equal(evaluatePolicy(deps(dependency('vite', 'major', '7.3.7', '8.0.0')), NO_LOCK, NPM).autoMerge, false);
   });
 
   it('lehnt Metadaten ohne Liste oder ohne Namen an der Grenze ab', () => {
@@ -105,7 +119,7 @@ describe('Lock-Diff', () => {
       { 'composer.lock': composerLock([{ name: 'laravel/framework', version: 'v12.1.0' }, { name: 'symfony/console', version: 'v8.0.1' }]) },
       { 'composer.lock': composerLock([{ name: 'laravel/framework', version: 'v12.1.1' }, { name: 'symfony/console', version: 'v7.4.9' }]) },
     );
-    const result = evaluatePolicy(deps(dependency('laravel/framework', 'patch', '12.1.0', '12.1.1')), collectLockChanges(dirs.base, dirs.head), 'minor');
+    const result = evaluatePolicy(deps(dependency('laravel/framework', 'patch', '12.1.0', '12.1.1')), collectLockChanges(dirs.base, dirs.head), NPM);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /symfony\/console v8\.0\.1 -> v7\.4\.9 \(Downgrade\)/);
@@ -117,7 +131,7 @@ describe('Lock-Diff', () => {
       { 'package-lock.json': npmLock({ 'node_modules/nx': { version: '22.7.12' }, 'node_modules/undici': { version: '8.10.0' }, 'node_modules/fflate': { version: '0.8.2' } }) },
       { 'package-lock.json': npmLock({ 'node_modules/nx': { version: '23.3.0' }, 'node_modules/undici': { version: '7.29.0' }, 'node_modules/fflate': { version: '0.8.3' } }) },
     );
-    const result = evaluatePolicy(deps(dependency('fflate', 'patch', '0.8.2', '0.8.3')), collectLockChanges(dirs.base, dirs.head), 'minor');
+    const result = evaluatePolicy(deps(dependency('fflate', 'patch', '0.8.2', '0.8.3')), collectLockChanges(dirs.base, dirs.head), NPM);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /nx 22\.7\.12 -> 23\.3\.0 \(Major\)/);
@@ -136,7 +150,7 @@ describe('Lock-Diff', () => {
         'package-lock.json': npmLock({ 'node_modules/esbuild': { version: '0.27.0' }, 'node_modules/rolldown': { version: '1.0.0-rc.3' }, 'node_modules/new': { version: '2.0.0' } }),
       },
     );
-    const result = evaluatePolicy(deps(dependency('vite', 'minor')), collectLockChanges(dirs.base, dirs.head), 'minor');
+    const result = evaluatePolicy(deps(dependency('vite', 'minor')), collectLockChanges(dirs.base, dirs.head), NPM);
 
     assert.equal(result.autoMerge, true);
     assert.equal(result.report.length, 5);
@@ -148,7 +162,7 @@ describe('Lock-Diff', () => {
       { 'package-lock.json': npmLock({ 'node_modules/vitest': { version: '4.1.11' } }) },
       { 'package-lock.json': npmLock({ 'node_modules/vitest': { version: '5.0.4' } }) },
     );
-    const result = evaluatePolicy(deps(dependency('vitest', 'major', '4.1.11', '5.0.4')), collectLockChanges(dirs.base, dirs.head), 'minor');
+    const result = evaluatePolicy(deps(dependency('vitest', 'major', '4.1.11', '5.0.4')), collectLockChanges(dirs.base, dirs.head), NPM);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /vitest: Major/);
@@ -165,7 +179,7 @@ describe('Lock-Diff', () => {
     }
 
     const dirs = lockDirs({ 'package-lock.json': npmLock(base) }, { 'package-lock.json': npmLock(head) });
-    const result = evaluatePolicy(deps(dependency('axios', 'patch')), collectLockChanges(dirs.base, dirs.head), 'minor');
+    const result = evaluatePolicy(deps(dependency('axios', 'patch')), collectLockChanges(dirs.base, dirs.head), NPM);
 
     assert.equal(result.autoMerge, false);
     assert.match(result.reason, /2 weitere Blocker/);
@@ -174,7 +188,7 @@ describe('Lock-Diff', () => {
 
   it('ueberspringt Lockfiles, die es auf keiner Seite gibt', () => {
     const dirs = lockDirs({}, {});
-    const result = evaluatePolicy(deps(dependency('actions/checkout', 'minor')), collectLockChanges(dirs.base, dirs.head), 'minor');
+    const result = evaluatePolicy(deps(dependency('actions/checkout', 'minor')), collectLockChanges(dirs.base, dirs.head), NPM);
 
     assert.equal(result.autoMerge, true);
     assert.match(result.reason, /kein Lockfile im Update-Verzeichnis/);
@@ -184,8 +198,8 @@ describe('Lock-Diff', () => {
     const oneSided = lockDirs({ 'composer.lock': composerLock([]) }, {});
     const broken = lockDirs({ 'package-lock.json': '{' }, { 'package-lock.json': npmLock({}) });
 
-    assert.match(evaluatePolicy(deps(dependency('a', 'patch')), collectLockChanges(oneSided.base, oneSided.head), 'minor').reason, /composer\.lock gibt es nur im Base-Stand/);
-    assert.match(evaluatePolicy(deps(dependency('a', 'patch')), collectLockChanges(broken.base, broken.head), 'minor').reason, /package-lock\.json nicht lesbar/);
+    assert.match(evaluatePolicy(deps(dependency('a', 'patch')), collectLockChanges(oneSided.base, oneSided.head), NPM).reason, /composer\.lock gibt es nur im Base-Stand/);
+    assert.match(evaluatePolicy(deps(dependency('a', 'patch')), collectLockChanges(broken.base, broken.head), NPM).reason, /package-lock\.json nicht lesbar/);
   });
 });
 

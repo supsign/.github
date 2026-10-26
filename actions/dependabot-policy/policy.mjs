@@ -9,6 +9,8 @@
  *    - patch                                   -> ok
  *    - minor                                   -> ok, ausser MAX_UPDATE=patch
  *    - major oder unbekannter Update-Typ       -> manuelles Review
+ *    Ausnahme GitHub Actions: patch, minor und major -> ok. Die CI fuehrt
+ *    diese Actions selbst aus, bricht ein Update, ist sie rot.
  *
  * B) Der Lock-Diff: composer.lock und package-lock.json im Update-Verzeichnis,
  *    Base-Branch gegen Test-Merge-Commit, also genau das, was der Merge in
@@ -27,7 +29,7 @@
  * fast jede Gruppe reviewpflichtig. Was davon den Build bricht, faengt die CI.
  *
  * Aufruf:
- *   UPDATED_DEPENDENCIES_JSON='[...]' MAX_UPDATE=minor \
+ *   UPDATED_DEPENDENCIES_JSON='[...]' PACKAGE_ECOSYSTEM=npm_and_yarn MAX_UPDATE=minor \
  *   LOCKFILE_BASE_DIR=lock-base LOCKFILE_HEAD_DIR=lock-head node policy.mjs
  */
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -87,12 +89,21 @@ export function parseDependencies(raw) {
   });
 }
 
-function evaluateMetadata(dependencies, maxUpdate) {
+function allowedUpdateTypes(ecosystem, maxUpdate) {
+  if (ecosystem === 'github_actions') {
+    return ['patch', 'minor', 'major'];
+  }
+
+  return maxUpdate === 'minor' ? ['patch', 'minor'] : ['patch'];
+}
+
+function evaluateMetadata(dependencies, ecosystem, maxUpdate) {
+  const allowed = allowedUpdateTypes(ecosystem, maxUpdate);
   const approved = [];
   const blockers = [];
 
   for (const { name, updateType } of dependencies) {
-    if (updateType === 'patch' || (updateType === 'minor' && maxUpdate === 'minor')) {
+    if (allowed.includes(updateType)) {
       approved.push(`${name} (${updateType})`);
     }
     else if (updateType === 'minor') {
@@ -345,11 +356,11 @@ export function evaluateLockDiff(lockDiff, dependencies) {
 /**
  * @param {Array<{name: string, updateType: string | null, from: string, to: string}>} dependencies Ergebnis von parseDependencies.
  * @param {{changes: Array<object>, errors: string[], files: string[]}} lockDiff Ergebnis von collectLockChanges.
- * @param {string} maxUpdate patch oder minor.
+ * @param {{ecosystem: string, maxUpdate: string}} options package-ecosystem aus fetch-metadata (z.B. github_actions), MAX_UPDATE patch oder minor.
  * @returns {{autoMerge: boolean, reason: string, report: string[]}}
  */
-export function evaluatePolicy(dependencies, lockDiff, maxUpdate) {
-  const { approved, blockers } = evaluateMetadata(dependencies, maxUpdate);
+export function evaluatePolicy(dependencies, lockDiff, { ecosystem, maxUpdate }) {
+  const { approved, blockers } = evaluateMetadata(dependencies, ecosystem, maxUpdate);
   const lock = evaluateLockDiff(lockDiff, dependencies);
 
   blockers.push(...lock.blockers);
@@ -393,7 +404,8 @@ export function evaluateEnvironment(env) {
     };
   }
 
-  return evaluatePolicy(dependencies, lockDiff, maxUpdate);
+  // Fehlt das Oekosystem, gelten die strengeren Regeln fuer Pakete.
+  return evaluatePolicy(dependencies, lockDiff, { ecosystem: env.PACKAGE_ECOSYSTEM ?? '', maxUpdate });
 }
 
 function main() {

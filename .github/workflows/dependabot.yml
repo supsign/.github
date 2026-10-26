@@ -58,6 +58,7 @@ jobs:
         with:
           updated-dependencies-json: ${{ steps.metadata.outputs.updated-dependencies-json }}
           directory: ${{ steps.metadata.outputs.directory }}
+          package-ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}
           max-update: ${{ inputs.max-update }}
           merge-sha: ${{ github.sha }}
 

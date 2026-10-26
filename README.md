@@ -16,6 +16,7 @@ Ein Dependabot-PR wird automatisch gemergt, wenn die CI des Repos grün ist **un
 | patch | automatisch |
 | minor | automatisch (in Repos mit `max-update: patch` manuell) |
 | major | manuell |
+| GitHub Actions, jede Stufe inklusive major | automatisch: Die CI führt die Actions selbst aus, bricht ein Update, ist sie rot |
 | Security-Update | dieselben Regeln wie oben |
 | Lock-Diff: ein Paket, das Dependabot **nicht** angefordert hat, springt eine Major-Version oder wird **heruntergestuft** | manuell |
 | Lock-Diff: transitive 0.x-Sprünge, Vorabversionen, Dev-Branches, neue oder entfernte Pakete | automatisch, steht im Protokoll |

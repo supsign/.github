@@ -8,6 +8,9 @@ inputs:
   directory:
     description: Output directory von dependabot/fetch-metadata, z.B. "/" oder "/Develop/paket"
     required: true
+  package-ecosystem:
+    description: Output package-ecosystem von dependabot/fetch-metadata, z.B. npm_and_yarn oder github_actions
+    required: true
   max-update:
     description: Hoechster Update-Typ, der automatisch gemergt wird (patch oder minor)
     required: true
@@ -76,6 +79,7 @@ runs:
       shell: bash
       env:
         UPDATED_DEPENDENCIES_JSON: ${{ inputs.updated-dependencies-json }}
+        PACKAGE_ECOSYSTEM: ${{ inputs.package-ecosystem }}
         MAX_UPDATE: ${{ inputs.max-update }}
         LOCKFILE_BASE_DIR: ${{ runner.temp }}/lock-base
         LOCKFILE_HEAD_DIR: ${{ runner.temp }}/lock-head
