@@ -27,7 +27,10 @@ Der Lock-Diff vergleicht `composer.lock` und `package-lock.json` im Update-Verze
 - Ein Composer-„Patch“-PR stufte `symfony/console` von v8 auf v7 herunter.
 - Ein npm-Security-PR zog `nx` 22 → 23 mit und stufte `undici` von 8 auf 7 herunter.
 
-`pnpm-lock.yaml` wird noch nicht gelesen. Für pnpm-Repos gelten nur die Metadaten-Regeln.
+Grenzen des Lock-Diffs:
+
+- `pnpm-lock.yaml` und pip werden nicht gelesen. Dort gelten nur die Metadaten-Regeln.
+- Bei einer Gruppe über mehrere Verzeichnisse liefert `fetch-metadata` nur das erste Verzeichnis. Nur dort wird verglichen.
 
 ### Ablauf
 
@@ -52,7 +55,7 @@ Der Job läuft nur, wenn der PR von Dependabot stammt **und** Dependabot den Lau
    - `ignore` für Pakete, die nachweislich nicht gehoben werden können
    - Familien-Gruppen für Pakete, die nur gemeinsam gehoben werden können, sonst bricht die Installation (z.B. `nx` mit `@nx/*` und `@swc/*`). Sie stehen **vor** den Standard-Gruppen, weil Dependabot ein Paket der ersten passenden Gruppe zuordnet.
    - weitere Ökosysteme (z.B. `pip`) nach demselben Muster
-2. **CI**: Am Ende der CI-Datei kommen die beiden Jobs `ci` und `dependabot` aus [`templates/ci.yml`](templates/ci.yml) dazu. `ci` braucht in `needs` alle anderen Jobs der Datei.
+2. **CI**: Am Ende der CI-Datei kommen die beiden Jobs `ci` und `dependabot` aus [`templates/ci.yml`](templates/ci.yml) dazu, genau so, inklusive der `if`-Zeile am `dependabot`-Job. `ci` braucht in `needs` alle anderen Jobs der Datei. Einzige Ausnahme ist ein Job, der bewusst nicht blockieren soll, etwa ein noch flakiger E2E-Job. Er bleibt mit Grund im Kommentar draussen. Repo-eigene Dependabot-Prüfungen gehören in dieselbe Datei, weil `needs` nicht über Workflows hinweg wirkt.
 3. **Eigene Auto-Merge-Workflows löschen** (`dependabot-auto-merge.yml` und ähnliche).
 4. **Branch-Schutz** setzen: `node scripts/branch-protection.mjs supsign/<repo>`, prüfen, dann mit `--apply`.
 

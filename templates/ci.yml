@@ -26,7 +26,8 @@ jobs:
   # Einziger Required-Status-Check im Branch-Schutz. Er fasst alle Jobs
   # zusammen, damit der Branch-Schutz keine einzelnen Jobnamen kennen muss und
   # ein neuer Job ohne Settings-Aenderung mitzaehlt. In `needs` stehen ALLE
-  # Jobs dieser Datei ausser ci und dependabot.
+  # Jobs dieser Datei ausser ci und dependabot. Einzige Ausnahme: ein Job, der
+  # bewusst nicht blockieren soll (z.B. ein noch flakiger E2E-Job), mit Grund.
   ci:
     name: ci
     if: always()
@@ -41,6 +42,10 @@ jobs:
   # Zentrale Dependabot-Automatik, startet nur bei gruenem ci.
   dependabot:
     needs: ci
+    # Pflicht. Ohne diese Zeile gilt das implizite success(), und das prueft
+    # alle Vorgaenger-Jobs: ist einer davon uebersprungen (Matrix ohne Treffer,
+    # bedingter Job), wird dependabot trotz gruenem ci uebersprungen.
+    if: ${{ !cancelled() && needs.ci.result == 'success' }}
     uses: supsign/.github/.github/workflows/dependabot.yml@main
     permissions:
       contents: write
