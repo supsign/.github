@@ -40,6 +40,9 @@ jobs:
 
     env:
       GH_TOKEN: ${{ github.token }}
+      # Der Job checkt nichts aus. Ohne GH_REPO versucht gh (z.B. label create),
+      # das Repo aus einem Git-Checkout abzuleiten, und bricht ab.
+      GH_REPO: ${{ github.repository }}
       REPO: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PR_URL: ${{ github.event.pull_request.html_url }}
