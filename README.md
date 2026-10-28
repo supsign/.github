@@ -78,6 +78,12 @@ Repo-eigene Prüfungen, etwa ein ES-Syntax-Gate für alte Display-Browser, gehö
 
 Bekannte Folge: Ein Merge mit `GITHUB_TOKEN` löst keine Push-Workflows aus, `main` bekommt nach einem Dependabot-Merge also keinen eigenen CI-Lauf. Deploy-Webhooks (Forge) laufen trotzdem, sie hängen nicht an Actions.
 
+### Wenn ein Dependabot-PR hängt
+
+1. Die Job-Zusammenfassung **Dependabot-Policy** im CI-Lauf des PRs nennt Entscheid, Grund und den vollständigen Lock-Diff.
+2. Ist `ci` rot, startet der zentrale Job gar nicht. Der Fehler liegt dann in der CI oder auf `main`.
+3. Nach einer Änderung hier: Ein **Re-Run** eines alten Laufs nutzt den alten Stand dieses Workflows. Einen Lauf mit dem neuen Stand gibt es nur über einen neuen Commit, also `@dependabot rebase` im PR. Schließen und Wiederöffnen hilft nicht, denn dann ist nicht Dependabot der Auslöser, und der Job läuft bewusst nicht.
+
 ## Branch-Schutz
 
 Standard für den Default-Branch jedes Repos mit CI. Gesetzt wird er mit [`scripts/branch-protection.mjs`](scripts/branch-protection.mjs):
